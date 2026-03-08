@@ -18,64 +18,82 @@
             justify-content: center;
             font-size: 1.5rem;
             font-weight: bold;
-            border-radius: 8px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: transform 0.1s, background-color 0.2s;
+            transition: all 0.15s ease;
             user-select: none;
             touch-action: manipulation;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         }
-        .tile:active {
-            transform: scale(0.95);
+        .tile:not(.tile-empty):hover {
+            transform: translateY(-2px);
+            filter: brightness(1.1);
         }
         .tile-empty {
             background-color: transparent !important;
+            box-shadow: none !important;
             cursor: default;
         }
     </style>
 </head>
-<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center p-4">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
 
     <div id="app" class="w-full max-w-md">
-        <header class="text-center mb-6">
-            <h1 class="text-3xl font-bold text-blue-400">15 PUZZLE BATTLE</h1>
-            <p id="status-text" class="text-slate-400 mt-2">Initializing...</p>
-            <div id="user-info" class="text-[10px] text-slate-500 mt-1 font-mono"></div>
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+                15 PUZZLE BATTLE
+            </h1>
+            <div id="connection-status" class="mt-2 inline-flex items-center px-3 py-1 rounded-full bg-slate-800 text-xs font-medium text-slate-400 border border-slate-700">
+                <span class="w-2 h-2 rounded-full bg-yellow-500 mr-2 animate-pulse"></span>
+                <span id="status-text">サーバーに接続中...</span>
+            </div>
         </header>
 
-        <!-- Matching Screen -->
-        <div id="matching-screen" class="bg-slate-800 p-8 rounded-2xl text-center shadow-xl">
-            <div class="animate-spin inline-block w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mb-4"></div>
-            <p id="match-msg" class="text-xl font-semibold">対戦相手を探しています...</p>
-            <p class="text-sm text-slate-400 mt-2">別のブラウザや端末でこのページを開くと対戦が始まります。</p>
+        <!-- Matching View -->
+        <div id="matching-view" class="bg-slate-900 border border-slate-800 p-10 rounded-3xl shadow-2xl text-center">
+            <div class="relative w-20 h-20 mx-auto mb-6">
+                <div class="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
+                <div class="absolute inset-0 border-4 border-t-blue-500 rounded-full animate-spin"></div>
+            </div>
+            <h2 class="text-xl font-bold mb-2">対戦相手を待機中...</h2>
+            <p class="text-slate-500 text-sm leading-relaxed">
+                他のプレイヤーが参加すると自動的に開始します。<br>
+                別のブラウザで開いてテストできます。
+            </p>
+            <div id="user-id-display" class="mt-6 font-mono text-[10px] text-slate-600 truncate"></div>
         </div>
 
-        <!-- Game Screen -->
-        <div id="game-screen" class="hidden">
-            <div class="flex justify-between mb-4 bg-slate-800 p-4 rounded-xl shadow-lg">
-                <div class="text-center">
-                    <p class="text-xs uppercase text-slate-400">自分</p>
-                    <p id="my-moves" class="text-2xl font-bold text-blue-400">0</p>
+        <!-- Game View (Hidden) -->
+        <div id="game-view" class="hidden space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-900 border border-blue-500/30 p-4 rounded-2xl shadow-lg text-center">
+                    <p class="text-[10px] uppercase tracking-widest text-blue-400 mb-1">YOU</p>
+                    <p id="my-moves" class="text-3xl font-black">0</p>
+                    <p class="text-[10px] text-slate-500 mt-1">MOVES</p>
                 </div>
-                <div class="text-center border-l border-slate-700 pl-4">
-                    <p class="text-xs uppercase text-slate-400">相手</p>
-                    <p id="opponent-moves" class="text-2xl font-bold text-red-400">0</p>
+                <div class="bg-slate-900 border border-red-500/20 p-4 rounded-2xl shadow-lg text-center">
+                    <p class="text-[10px] uppercase tracking-widest text-red-400 mb-1">OPPONENT</p>
+                    <p id="opponent-moves" class="text-3xl font-black text-slate-400">0</p>
+                    <p class="text-[10px] text-slate-500 mt-1">MOVES</p>
                 </div>
             </div>
 
-            <div id="puzzle-board" class="puzzle-grid bg-slate-700 p-2 rounded-xl shadow-inner"></div>
+            <div id="board" class="puzzle-grid bg-slate-900 border-4 border-slate-800 p-3 rounded-2xl shadow-inner">
+                <!-- Tiles -->
+            </div>
 
-            <div class="mt-6 text-center">
-                <p id="game-hint" class="text-slate-400 text-sm italic">相手より少ない手数でクリアしましょう！</p>
+            <div class="text-center py-2">
+                <p id="game-message" class="text-sm text-slate-400 font-medium">パネルをタップして移動させてください</p>
             </div>
         </div>
 
-        <!-- Result Modal -->
-        <div id="result-modal" class="fixed inset-0 bg-black/90 flex items-center justify-center hidden z-50 p-4">
-            <div class="bg-slate-800 p-8 rounded-3xl text-center max-w-xs w-full shadow-2xl border-2 border-blue-500">
-                <h2 id="result-title" class="text-4xl font-black mb-2 text-yellow-400">YOU WIN!</h2>
-                <p id="result-detail" class="text-slate-300 mb-6 whitespace-pre-line"></p>
-                <button onclick="location.reload()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition">
-                    もう一度プレイ
+        <!-- Win/Loss Overlay -->
+        <div id="overlay" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center hidden z-50 p-6">
+            <div class="bg-slate-900 border border-slate-700 p-10 rounded-3xl shadow-2xl text-center max-w-sm w-full">
+                <h3 id="overlay-title" class="text-5xl font-black mb-4 italic">WIN</h3>
+                <p id="overlay-desc" class="text-slate-400 mb-8 leading-relaxed"></p>
+                <button onclick="location.reload()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition shadow-lg shadow-blue-500/20">
+                    もう一度挑戦する
                 </button>
             </div>
         </div>
@@ -83,247 +101,224 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, collection, setDoc, getDoc, updateDoc, onSnapshot, query, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, collection, setDoc, getDoc, updateDoc, onSnapshot, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Global Setup
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'puzzle-battle-v2';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : '15-puzzle-battle-final';
 
-        let currentUser = null;
-        let currentGameId = null;
-        let isPlayer1 = false;
+        // App State
+        let user = null;
+        let gameId = null;
+        let role = null; // 'p1' or 'p2'
         let board = [];
         let moves = 0;
-        let gameActive = false;
-        let matchingUnsubscribe = null;
+        let isActive = false;
 
-        const statusText = document.getElementById('status-text');
-        const userInfo = document.getElementById('user-info');
-        const matchingScreen = document.getElementById('matching-screen');
-        const gameScreen = document.getElementById('game-screen');
-        const boardElement = document.getElementById('puzzle-board');
-        const myMovesDisplay = document.getElementById('my-moves');
-        const opponentMovesDisplay = document.getElementById('opponent-moves');
-        const resultModal = document.getElementById('result-modal');
+        // DOM Elements
+        const statusEl = document.getElementById('status-text');
+        const boardEl = document.getElementById('board');
+        const myMovesEl = document.getElementById('my-moves');
+        const oppMovesEl = document.getElementById('opponent-moves');
+        const matchingView = document.getElementById('matching-view');
+        const gameView = document.getElementById('game-view');
+        const overlay = document.getElementById('overlay');
 
-        const initAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
+        // 1. Initialize Auth
+        const init = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (e) {
+                statusEl.innerText = "認証エラー";
+                console.error(e);
             }
         };
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                userInfo.innerText = `UID: ${user.uid}`;
+        onAuthStateChanged(auth, (u) => {
+            if (u) {
+                user = u;
+                document.getElementById('user-id-display').innerText = `ID: ${user.uid}`;
                 startMatching();
             }
         });
 
-        async function startMatching() {
-            if (!currentUser) return;
-            statusText.innerText = "マッチング中...";
-
+        // 2. Matching Logic
+        const startMatching = async () => {
+            statusEl.innerText = "マッチング中...";
             const waitingRoomRef = collection(db, 'artifacts', appId, 'public', 'data', 'waitingRoom');
-            const gamesRef = collection(db, 'artifacts', appId, 'public', 'data', 'games');
 
-            // 1. まず待機している人がいないかチェック
-            matchingUnsubscribe = onSnapshot(waitingRoomRef, async (snapshot) => {
-                if (currentGameId) return;
+            // 待機中の人を探す
+            onSnapshot(waitingRoomRef, async (snap) => {
+                if (gameId) return;
 
-                const waitingUsers = snapshot.docs
-                    .map(d => ({ id: d.id, ...d.data() }))
-                    .filter(u => u.id !== currentUser.uid)
-                    .sort((a, b) => a.joinedAt - b.joinedAt);
-
-                if (waitingUsers.length > 0) {
-                    // 待機者がいる場合、自分が「Player 2」として入室
-                    const opponent = waitingUsers[0];
-                    const gameId = `${opponent.id}_vs_${currentUser.uid}`;
+                const others = snap.docs.filter(d => d.id !== user.uid);
+                
+                if (others.length > 0) {
+                    // 相手がいるので自分が「子(p2)」としてゲーム作成
+                    const opponent = others[0];
+                    const newGameId = `${opponent.id}_vs_${user.uid}`;
+                    const initialBoard = createSolvableBoard();
                     
-                    // ゲームドキュメントを作成
-                    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-                    const initialBoard = generateSolvableBoard();
-                    
-                    try {
-                        await setDoc(gameRef, {
-                            p1: opponent.id,
-                            p2: currentUser.uid,
-                            p1Moves: 0,
-                            p2Moves: 0,
-                            p1Finished: false,
-                            p2Finished: false,
-                            board: JSON.stringify(initialBoard),
-                            status: 'playing',
-                            createdAt: Date.now()
-                        });
-
-                        // 相手の待機ドキュメントを削除
-                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'waitingRoom', opponent.id));
-                        
-                        joinGame(gameId, false);
-                    } catch (e) {
-                        console.error("Game setup error", e);
-                    }
-                } else {
-                    // 誰もいないので自分が待機
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'waitingRoom', currentUser.uid), {
-                        joinedAt: Date.now()
+                    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', newGameId);
+                    await setDoc(gameRef, {
+                        p1: opponent.id,
+                        p2: user.uid,
+                        p1Moves: 0,
+                        p2Moves: 0,
+                        p1Done: false,
+                        p2Done: false,
+                        board: JSON.stringify(initialBoard),
+                        status: 'active',
+                        createdAt: serverTimestamp()
                     });
-                    
-                    // 誰かが自分を見つけてゲームを作るのを待つ
-                    watchForGameCreated();
+
+                    // 相手の待機ドキュメントを削除（マッチング成立）
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'waitingRoom', opponent.id));
+                    enterGame(newGameId, 'p2');
+                } else {
+                    // 誰もいないので「親(p1)」として待機
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'waitingRoom', user.uid), {
+                        timestamp: serverTimestamp()
+                    });
+                    watchForInboundGame();
                 }
             }, (err) => console.error("WaitingRoom Error:", err));
-        }
+        };
 
-        function watchForGameCreated() {
+        // 親としてゲームが作られるのを監視
+        const watchForInboundGame = () => {
             const gamesRef = collection(db, 'artifacts', appId, 'public', 'data', 'games');
-            onSnapshot(gamesRef, (snapshot) => {
-                if (currentGameId) return;
-                
-                snapshot.docs.forEach(d => {
+            onSnapshot(gamesRef, (snap) => {
+                if (gameId) return;
+                snap.docs.forEach(d => {
                     const data = d.data();
-                    if (data.p1 === currentUser.uid && data.status === 'playing') {
-                        joinGame(d.id, true);
+                    if (data.p1 === user.uid && data.status === 'active') {
+                        enterGame(d.id, 'p1');
                     }
                 });
-            }, (err) => console.error("Game Search Error:", err));
-        }
+            }, (err) => console.error("Game Watch Error:", err));
+        };
 
-        function joinGame(gameId, isP1) {
-            if (currentGameId) return;
-            currentGameId = gameId;
-            isPlayer1 = isP1;
-
-            if (matchingUnsubscribe) matchingUnsubscribe();
-            
-            matchingScreen.classList.add('hidden');
-            gameScreen.classList.remove('hidden');
-            statusText.innerText = `対戦中 (${isP1 ? '先手' : '後手'})`;
+        // 3. Game Lifecycle
+        const enterGame = (id, r) => {
+            gameId = id;
+            role = r;
+            matchingView.classList.add('hidden');
+            gameView.classList.remove('hidden');
+            statusEl.innerText = `対戦開始! (${role === 'p1' ? '先手' : '後手'})`;
+            document.querySelector('#connection-status span').classList.replace('bg-yellow-500', 'bg-emerald-500');
 
             const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-            onSnapshot(gameRef, (snapshot) => {
-                const data = snapshot.data();
+            onSnapshot(gameRef, (docSnap) => {
+                const data = docSnap.data();
                 if (!data) return;
 
-                if (!gameActive && data.status === 'playing') {
+                // 初期盤面セット
+                if (!isActive) {
                     board = JSON.parse(data.board);
                     renderBoard();
-                    gameActive = true;
+                    isActive = true;
                 }
 
-                const oppMoves = isPlayer1 ? data.p2Moves : data.p1Moves;
-                opponentMovesDisplay.innerText = oppMoves;
+                // 相手の手数を更新
+                const oppKey = role === 'p1' ? 'p2Moves' : 'p1Moves';
+                oppMovesEl.innerText = data[oppKey];
 
-                const meFinished = isPlayer1 ? data.p1Finished : data.p2Finished;
-                const oppFinished = isPlayer1 ? data.p2Finished : data.p1Finished;
-
-                if (meFinished && oppFinished) {
-                    const myMoves = isPlayer1 ? data.p1Moves : data.p2Moves;
-                    const opponentMoves = isPlayer1 ? data.p2Moves : data.p1Moves;
-                    showFinalResult(myMoves, opponentMoves);
-                } else if (oppFinished) {
-                    statusText.innerText = "相手がクリア！急いで！";
+                // 勝敗チェック
+                if (data.p1Done && data.p2Done) {
+                    finishGame(data);
+                } else if ((role === 'p1' && data.p2Done) || (role === 'p2' && data.p1Done)) {
+                    document.getElementById('game-message').innerText = "相手がクリアしました！急いで！";
                 }
-            }, (err) => console.error("Sync Error:", err));
-        }
+            }, (err) => console.error("Game Sync Error:", err));
+        };
 
-        function generateSolvableBoard() {
-            // 完成状態
+        const createSolvableBoard = () => {
             let b = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,null];
-            let emptyIdx = 15;
-            
-            // 確実に解けるように、ランダムに200回動かす
-            for (let i = 0; i < 200; i++) {
-                const neighbors = getNeighbors(emptyIdx);
-                const moveIdx = neighbors[Math.floor(Math.random() * neighbors.length)];
-                [b[emptyIdx], b[moveIdx]] = [b[moveIdx], b[emptyIdx]];
-                emptyIdx = moveIdx;
+            let empty = 15;
+            for(let i=0; i<300; i++) {
+                const n = getNeighbors(empty);
+                const move = n[Math.floor(Math.random() * n.length)];
+                [b[empty], b[move]] = [b[move], b[empty]];
+                empty = move;
             }
             return b;
-        }
+        };
 
-        function getNeighbors(idx) {
-            const neighbors = [];
-            const r = Math.floor(idx / 4);
-            const c = idx % 4;
-            if (r > 0) neighbors.push(idx - 4);
-            if (r < 3) neighbors.push(idx + 4);
-            if (c > 0) neighbors.push(idx - 1);
-            if (c < 3) neighbors.push(idx + 1);
-            return neighbors;
-        }
+        const getNeighbors = (i) => {
+            const res = [];
+            if (i >= 4) res.push(i - 4);
+            if (i < 12) res.push(i + 4);
+            if (i % 4 > 0) res.push(i - 1);
+            if (i % 4 < 3) res.push(i + 1);
+            return res;
+        };
 
-        function renderBoard() {
-            boardElement.innerHTML = '';
-            board.forEach((val, idx) => {
+        const renderBoard = () => {
+            boardEl.innerHTML = '';
+            board.forEach((v, i) => {
                 const tile = document.createElement('div');
-                tile.className = `tile shadow-lg ${val === null ? 'tile-empty' : 'bg-blue-600 border-2 border-blue-400 text-white'}`;
-                tile.innerText = val || '';
-                tile.onclick = () => handleTileClick(idx);
-                boardElement.appendChild(tile);
+                tile.className = `tile ${v ? 'bg-blue-600 text-white border border-blue-400' : 'tile-empty'}`;
+                tile.innerText = v || '';
+                tile.onclick = () => moveTile(i);
+                boardEl.appendChild(tile);
             });
-        }
+        };
 
-        async function handleTileClick(idx) {
-            if (!gameActive) return;
-
-            const emptyIdx = board.indexOf(null);
-            if (getNeighbors(emptyIdx).includes(idx)) {
-                [board[emptyIdx], board[idx]] = [board[idx], board[emptyIdx]];
+        const moveTile = async (i) => {
+            if (!isActive) return;
+            const empty = board.indexOf(null);
+            if (getNeighbors(empty).includes(i)) {
+                [board[empty], board[i]] = [board[i], board[empty]];
                 moves++;
-                myMovesDisplay.innerText = moves;
+                myMovesEl.innerText = moves;
                 renderBoard();
 
-                const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId);
-                const updates = isPlayer1 ? { p1Moves: moves } : { p2Moves: moves };
+                const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+                const updates = {};
+                updates[`${role}Moves`] = moves;
 
-                if (isCleared()) {
-                    gameActive = false;
-                    statusText.innerText = "クリア！相手の結果を待っています...";
-                    if (isPlayer1) updates.p1Finished = true;
-                    else updates.p2Finished = true;
+                if (board.every((v, idx) => v === null || v === idx + 1)) {
+                    isActive = false;
+                    updates[`${role}Done`] = true;
+                    document.getElementById('game-message').innerText = "クリア！相手の完了を待っています...";
                 }
-                
                 await updateDoc(gameRef, updates);
             }
-        }
+        };
 
-        function isCleared() {
-            for (let i = 0; i < 15; i++) {
-                if (board[i] !== i + 1) return false;
-            }
-            return true;
-        }
-
-        function showFinalResult(myScore, oppScore) {
-            gameActive = false;
-            resultModal.classList.remove('hidden');
-            const title = document.getElementById('result-title');
-            const detail = document.getElementById('result-detail');
+        const finishGame = (data) => {
+            overlay.classList.remove('hidden');
+            const myScore = data[`${role}Moves`];
+            const oppScore = role === 'p1' ? data.p2Moves : data.p1Moves;
+            
+            const title = document.getElementById('overlay-title');
+            const desc = document.getElementById('overlay-desc');
 
             if (myScore < oppScore) {
-                title.innerText = "YOU WIN!";
-                title.className = "text-4xl font-black mb-2 text-yellow-400";
-                detail.innerText = `自分: ${myScore}手\n相手: ${oppScore}手\nおめでとうございます！`;
+                title.innerText = "WIN";
+                title.className = "text-5xl font-black mb-4 italic text-emerald-400";
+                desc.innerText = `あなたの手数: ${myScore}\n相手の手数: ${oppScore}\n完璧な勝利です！`;
             } else if (myScore > oppScore) {
-                title.innerText = "YOU LOSE";
-                title.className = "text-4xl font-black mb-2 text-red-500";
-                detail.innerText = `自分: ${myScore}手\n相手: ${oppScore}手\n相手の方が速かったです。`;
+                title.innerText = "LOSE";
+                title.className = "text-5xl font-black mb-4 italic text-red-500";
+                desc.innerText = `あなたの手数: ${myScore}\n相手の手数: ${oppScore}\n次はもっと効率よく解きましょう。`;
             } else {
                 title.innerText = "DRAW";
-                title.className = "text-4xl font-black mb-2 text-slate-400";
-                detail.innerText = `二人とも ${myScore} 手でした！`;
+                title.className = "text-5xl font-black mb-4 italic text-slate-400";
+                desc.innerText = `二人とも ${myScore} 手でした。\n珍しい引き分けです！`;
             }
-        }
+        };
 
-        window.onload = initAuth;
+        window.onload = init;
     </script>
 </body>
 </html>
