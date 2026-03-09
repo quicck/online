@@ -44,21 +44,20 @@
                 15 PUZZLE BATTLE
             </h1>
             <div id="connection-status" class="mt-2 inline-flex items-center px-3 py-1 rounded-full bg-slate-800 text-xs font-medium text-slate-400 border border-slate-700">
-                <span id="status-indicator" class="w-2 h-2 rounded-full bg-yellow-500 mr-2 animate-pulse"></span>
-                <span id="status-text">サーバーに接続中...</span>
+                <span id="status-indicator" class="w-2 h-2 rounded-full bg-red-500 mr-2 animate-pulse"></span>
+                <span id="status-text">初期化中...</span>
             </div>
         </header>
 
         <!-- Matching View -->
         <div id="matching-view" class="bg-slate-900 border border-slate-800 p-10 rounded-3xl shadow-2xl text-center">
-            <div class="relative w-20 h-20 mx-auto mb-6">
+            <div id="loading-spinner" class="relative w-20 h-20 mx-auto mb-6">
                 <div class="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
                 <div class="absolute inset-0 border-4 border-t-blue-500 rounded-full animate-spin"></div>
             </div>
-            <h2 class="text-xl font-bold mb-2">対戦相手を待機中...</h2>
-            <p class="text-slate-500 text-sm leading-relaxed">
-                別のブラウザタブで開くと対戦テストが可能です。<br>
-                マッチングしない場合はリロードしてください。
+            <h2 id="matching-title" class="text-xl font-bold mb-2">接続を確認しています...</h2>
+            <p id="matching-subtitle" class="text-slate-500 text-sm leading-relaxed">
+                サーバーへの応答を待っています。
             </p>
             <div id="user-id-display" class="mt-6 font-mono text-[10px] text-slate-600 truncate"></div>
         </div>
@@ -77,9 +76,7 @@
                     <p class="text-[10px] text-slate-500 mt-1">MOVES</p>
                 </div>
             </div>
-
             <div id="board" class="puzzle-grid bg-slate-900 border-4 border-slate-800 p-3 rounded-2xl shadow-inner"></div>
-
             <div class="text-center py-2">
                 <p id="game-message" class="text-sm text-slate-400 font-medium">パネルをタップして移動させてください</p>
             </div>
@@ -100,86 +97,105 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, collection, setDoc, getDocs, updateDoc, onSnapshot, deleteDoc, serverTimestamp, query, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, collection, setDoc, getDocs, updateDoc, onSnapshot, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // CONFIG
-        const firebaseConfig = JSON.parse(__firebase_config);
+        // Global Variables
+        let firebaseConfig = {};
+        try {
+            firebaseConfig = JSON.parse(__firebase_config);
+        } catch (e) {
+            console.error("Firebase config missing or invalid.");
+            document.getElementById('status-text').innerText = "設定エラー";
+        }
+
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : '15-puzzle-battle-final-v3';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : '15-puzzle-battle-gh-pages';
 
-        // STATE
         let user = null;
         let gameId = null;
         let role = null;
         let board = [];
         let moves = 0;
         let isActive = false;
-        let unsubscribeMatch = null;
 
         const statusText = document.getElementById('status-text');
         const statusIndicator = document.getElementById('status-indicator');
+        const matchingTitle = document.getElementById('matching-title');
+        const matchingSubtitle = document.getElementById('matching-subtitle');
 
-        // 1. AUTH & START
-        onAuthStateChanged(auth, async (u) => {
-            if (u && !user) {
-                user = u;
+        // Step 1: Authentication
+        async function startApp() {
+            statusText.innerText = "認証中...";
+            try {
+                const cred = await signInAnonymously(auth);
+                user = cred.user;
                 document.getElementById('user-id-display').innerText = `ID: ${user.uid}`;
-                await startMatching();
+                statusIndicator.classList.replace('bg-red-500', 'bg-yellow-500');
+                statusText.innerText = "マッチング中...";
+                matchingTitle.innerText = "対戦相手を待機中...";
+                matchingSubtitle.innerText = "別のブラウザやタブで開くと対戦を開始できます。";
+                
+                initMatching();
+            } catch (err) {
+                console.error("Auth error:", err);
+                statusText.innerText = "認証失敗";
             }
-        });
+        }
 
-        const startMatching = async () => {
-            statusText.innerText = "マッチング中...";
-            
+        // Step 2: Matching
+        async function initMatching() {
             const waitingRoomPath = `/artifacts/${appId}/public/data/waitingRoom`;
             const gamesPath = `/artifacts/${appId}/public/data/games`;
 
-            // A. 自分が作成される側の監視 (p1として)
-            const myGameDocRef = doc(db, gamesPath, user.uid);
-            onSnapshot(myGameDocRef, (snap) => {
+            // Listen for games where I am P1
+            const myGameRef = doc(db, gamesPath, user.uid);
+            onSnapshot(myGameRef, (snap) => {
                 if (gameId) return;
-                if (snap.exists()) {
-                    joinGame(user.uid, 'p1');
+                if (snap.exists() && snap.data().status === 'active') {
+                    enterGame(user.uid, 'p1');
                 }
             });
 
-            // B. 待機中の誰かを探す
-            const q = collection(db, waitingRoomPath);
-            const snapshot = await getDocs(q);
-            const others = snapshot.docs.filter(d => d.id !== user.uid);
+            // Try to find someone to play with
+            const waitCol = collection(db, waitingRoomPath);
+            const snapshot = await getDocs(waitCol);
+            const opponent = snapshot.docs.find(d => d.id !== user.uid);
 
-            if (others.length > 0) {
-                // 相手が見つかった：自分がp2としてゲームを作成
-                const opponentId = others[0].id;
-                gameId = opponentId;
+            if (opponent) {
+                // Opponent found: Create game as P2
+                gameId = opponent.id;
                 role = 'p2';
-
-                await setDoc(doc(db, gamesPath, gameId), {
-                    p1: opponentId,
-                    p2: user.uid,
-                    p1Moves: 0,
-                    p2Moves: 0,
-                    p1Done: false,
-                    p2Done: false,
-                    board: JSON.stringify(createSolvableBoard()),
-                    status: 'active',
-                    createdAt: serverTimestamp()
-                });
-
-                // 相手の待機札を削除
-                await deleteDoc(doc(db, waitingRoomPath, opponentId));
-                joinGame(gameId, 'p2');
+                const initialBoard = createSolvableBoard();
+                
+                try {
+                    await setDoc(doc(db, gamesPath, gameId), {
+                        p1: opponent.id,
+                        p2: user.uid,
+                        p1Moves: 0,
+                        p2Moves: 0,
+                        p1Done: false,
+                        p2Done: false,
+                        board: JSON.stringify(initialBoard),
+                        status: 'active',
+                        createdAt: serverTimestamp()
+                    });
+                    await deleteDoc(doc(db, waitingRoomPath, opponent.id));
+                    enterGame(gameId, 'p2');
+                } catch (e) {
+                    console.error("Match creation error:", e);
+                }
             } else {
-                // 誰もいない：自分が待機リストに載る
+                // No opponent: Join waiting room
                 await setDoc(doc(db, waitingRoomPath, user.uid), {
-                    joinedAt: serverTimestamp()
+                    heartbeat: serverTimestamp()
                 });
             }
-        };
+        }
 
-        const joinGame = (id, r) => {
+        // Step 3: Game Entry
+        function enterGame(id, r) {
             if (isActive) return;
             gameId = id;
             role = r;
@@ -188,96 +204,90 @@
             document.getElementById('game-view').classList.remove('hidden');
             statusText.innerText = `対戦中 (${role === 'p1' ? '先攻' : '後攻'})`;
             statusIndicator.classList.replace('bg-yellow-500', 'bg-emerald-500');
+            statusIndicator.classList.remove('animate-pulse');
 
             const gameRef = doc(db, `/artifacts/${appId}/public/data/games`, gameId);
             onSnapshot(gameRef, (snap) => {
                 const data = snap.data();
                 if (!data) return;
 
-                // 初回盤面生成
                 if (board.length === 0) {
                     board = JSON.parse(data.board);
                     renderBoard();
                     isActive = true;
                 }
 
-                // 相手の進捗表示
                 const oppKey = role === 'p1' ? 'p2Moves' : 'p1Moves';
                 document.getElementById('opponent-moves').innerText = data[oppKey];
 
-                // 終了判定
                 if (data.p1Done && data.p2Done) {
-                    showResult(data);
+                    finish(data);
                 }
             });
-        };
+        }
 
-        // UI & GAME LOGIC
-        const createSolvableBoard = () => {
+        // Game Functions
+        function createSolvableBoard() {
             let b = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,null];
             let empty = 15;
-            for(let i=0; i<150; i++) {
-                const neighbors = [];
-                if (empty >= 4) neighbors.push(empty - 4);
-                if (empty < 12) neighbors.push(empty + 4);
-                if (empty % 4 > 0) neighbors.push(empty - 1);
-                if (empty % 4 < 3) neighbors.push(empty + 1);
-                const move = neighbors[Math.floor(Math.random() * neighbors.length)];
-                [b[empty], b[move]] = [b[move], b[empty]];
-                empty = move;
+            for(let i=0; i<100; i++) {
+                const moves = [];
+                if (empty >= 4) moves.push(empty - 4);
+                if (empty < 12) moves.push(empty + 4);
+                if (empty % 4 > 0) moves.push(empty - 1);
+                if (empty % 4 < 3) moves.push(empty + 1);
+                const next = moves[Math.floor(Math.random() * moves.length)];
+                [b[empty], b[next]] = [b[next], b[empty]];
+                empty = next;
             }
             return b;
-        };
+        }
 
-        const renderBoard = () => {
-            const boardEl = document.getElementById('board');
-            boardEl.innerHTML = '';
+        function renderBoard() {
+            const el = document.getElementById('board');
+            el.innerHTML = '';
             board.forEach((v, i) => {
                 const tile = document.createElement('div');
                 tile.className = `tile ${v ? 'bg-blue-600 text-white border border-blue-400' : 'tile-empty'}`;
                 tile.innerText = v || '';
-                tile.onclick = () => handleMove(i);
-                boardEl.appendChild(tile);
+                tile.onclick = () => move(i);
+                el.appendChild(tile);
             });
-        };
+        }
 
-        const handleMove = async (i) => {
+        async function move(i) {
             if (!isActive) return;
             const empty = board.indexOf(null);
-            const isNeighbor = [empty-4, empty+4, empty-1, empty+1].includes(i);
-            const isSameRow = Math.floor(empty/4) === Math.floor(i/4);
-            const isSameCol = empty%4 === i%4;
+            const neighbors = [empty-4, empty+4, empty-1, empty+1];
+            
+            if (neighbors.includes(i)) {
+                // Grid check for wrap-around
+                const isSameRow = Math.floor(empty/4) === Math.floor(i/4);
+                const isSameCol = empty%4 === i%4;
+                if (!isSameRow && !isSameCol) return;
 
-            if (isNeighbor && (isSameRow || isSameCol)) {
                 [board[empty], board[i]] = [board[i], board[empty]];
                 moves++;
                 document.getElementById('my-moves').innerText = moves;
                 renderBoard();
 
+                const win = board.every((v, idx) => idx === 15 ? v === null : v === idx + 1);
                 const updates = {};
                 updates[`${role}Moves`] = moves;
-                
-                // 正解チェック
-                const win = board.every((v, idx) => idx === 15 ? v === null : v === idx + 1);
                 if (win) {
                     updates[`${role}Done`] = true;
                     isActive = false;
-                    document.getElementById('game-message').innerText = "クリア！相手の終了を待っています...";
+                    document.getElementById('game-message').innerText = "クリア！相手を待っています...";
                 }
-                
                 await updateDoc(doc(db, `/artifacts/${appId}/public/data/games`, gameId), updates);
             }
-        };
+        }
 
-        const showResult = (data) => {
-            const overlay = document.getElementById('overlay');
-            const title = document.getElementById('overlay-title');
-            const desc = document.getElementById('overlay-desc');
-            
+        function finish(data) {
             const myScore = data[`${role}Moves`];
             const oppScore = role === 'p1' ? data.p2Moves : data.p1Moves;
-
-            overlay.classList.remove('hidden');
+            document.getElementById('overlay').classList.remove('hidden');
+            const title = document.getElementById('overlay-title');
             if (myScore < oppScore) {
                 title.innerText = "WIN";
                 title.className = "text-5xl font-black mb-4 italic text-emerald-400";
@@ -288,17 +298,10 @@
                 title.innerText = "DRAW";
                 title.className = "text-5xl font-black mb-4 italic text-slate-400";
             }
-            desc.innerText = `YOU: ${myScore} moves\nOPPONENT: ${oppScore} moves`;
-        };
+            document.getElementById('overlay-desc').innerText = `あなたの手数: ${myScore}\n相手の手数: ${oppScore}`;
+        }
 
-        // 初期化実行
-        (async () => {
-            try {
-                await signInAnonymously(auth);
-            } catch (e) {
-                console.error("Auth failed", e);
-            }
-        })();
+        startApp();
     </script>
 </body>
 </html>
