@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Live SNS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .post-card {
+            transition: transform 0.2s;
+        }
+        .post-card:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-2xl mx-auto p-4">
+        <!-- Header -->
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-blue-600">Mini SNS</h1>
+            <p class="text-gray-500 text-sm">リアルタイムでつながる掲示板</p>
+            <div id="auth-status" class="mt-2 text-xs text-gray-400 font-mono">Connecting...</div>
+        </header>
+
+        <!-- Post Form -->
+        <div class="bg-white p-6 rounded-xl shadow-sm mb-8 border border-gray-100">
+            <div class="space-y-4">
+                <input type="text" id="username" placeholder="ユーザー名" 
+                    class="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
+                <textarea id="content" rows="3" placeholder="今、何をしていますか？" 
+                    class="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
+                <button id="post-btn" 
+                    class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                    投稿する
+                </button>
+            </div>
+        </div>
+
+        <!-- Timeline -->
+        <div id="timeline" class="space-y-4">
+            <!-- Posts will appear here -->
+            <div class="text-center py-10 text-gray-400">読み込み中...</div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, doc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Configuration (Environment Provided)
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        let currentUser = null;
+
+        // --- Authentication (Rule 3) ---
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Auth error:", error);
+                document.getElementById('auth-status').innerText = "認証エラーが発生しました";
+            }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            if (user) {
+                document.getElementById('auth-status').innerText = `Logged in as: ${user.uid}`;
+                startListening();
+            }
+        });
+
+        initAuth();
+
+        // --- Firestore Operations ---
+        const postsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'posts');
+
+        // Create Post
+        document.getElementById('post-btn').addEventListener('click', async () => {
+            if (!currentUser) return;
+
+            const username = document.getElementById('username').value.trim() || "名無しさん";
+            const content = document.getElementById('content').value.trim();
+
+            if (!content) {
+                alert("内容を入力してください");
+                return;
+            }
+
+            try {
+                await addDoc(postsCollection, {
+                    username: username,
+                    content: content,
+                    likes: 0,
+                    createdAt: serverTimestamp(),
+                    userId: currentUser.uid
+                });
+                document.getElementById('content').value = "";
+            } catch (e) {
+                console.error("Error adding document: ", e);
+            }
+        });
+
+        // Like Post
+        window.likePost = async (postId) => {
+            if (!currentUser) return;
+            const postRef = doc(db, 'artifacts', appId, 'public', 'data', 'posts', postId);
+            try {
+                await updateDoc(postRef, {
+                    likes: increment(1)
+                });
+            } catch (e) {
+                console.error("Error updating likes: ", e);
+            }
+        };
+
+        // Listen for Updates (Rule 2: Fetch and sort in JS)
+        function startListening() {
+            onSnapshot(postsCollection, (snapshot) => {
+                const timeline = document.getElementById('timeline');
+                const posts = [];
+                
+                snapshot.forEach((doc) => {
+                    posts.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Sort by createdAt descending (newest first)
+                posts.sort((a, b) => {
+                    const timeA = a.createdAt?.seconds || 0;
+                    const timeB = b.createdAt?.seconds || 0;
+                    return timeB - timeA;
+                });
+
+                renderTimeline(posts);
+            }, (error) => {
+                console.error("Listen failed:", error);
+            });
+        }
+
+        function renderTimeline(posts) {
+            const timeline = document.getElementById('timeline');
+            if (posts.length === 0) {
+                timeline.innerHTML = '<div class="text-center py-10 text-gray-400">まだ投稿がありません</div>';
+                return;
+            }
+
+            timeline.innerHTML = posts.map(post => {
+                const date = post.createdAt ? new Date(post.createdAt.seconds * 1000).toLocaleString('ja-JP') : '送信中...';
+                return `
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 post-card">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="font-bold text-gray-800">${escapeHtml(post.username)}</span>
+                            <span class="text-xs text-gray-400">${date}</span>
+                        </div>
+                        <p class="text-gray-700 mb-4 whitespace-pre-wrap">${escapeHtml(post.content)}</p>
+                        <div class="flex items-center">
+                            <button onclick="likePost('${post.id}')" 
+                                class="flex items-center space-x-1 text-pink-500 hover:bg-pink-50 px-3 py-1 rounded-full transition-colors border border-pink-100">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                </svg>
+                                <span class="text-sm font-semibold">${post.likes || 0}</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
+
